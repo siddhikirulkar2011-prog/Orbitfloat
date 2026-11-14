@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Balloon Beyond</title>
+<style>
+  :root{--bg:#080d1c;--panel:#111a30;--cyan:#72e7ff;--pink:#ff78bd;--green:#7ce6a5}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% 0%,#182747 0%,#080d1c 62%);color:#f4f7ff;font-family:system-ui,-apple-system,Segoe UI,sans-serif;display:grid;place-items:center;padding:18px}
+  .game-shell{width:min(100%,760px);background:linear-gradient(145deg,#111a30,#090f20);border:1px solid #263654;border-radius:24px;padding:16px;box-shadow:0 22px 70px #0009}
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 2px 12px}
+  h1{font-size:clamp(20px,4vw,28px);margin:0;letter-spacing:.04em}
+  h1 span{color:var(--cyan)}
+  .hud{display:flex;align-items:center;gap:16px;font-weight:700}
+  .hearts{color:#ff648f;letter-spacing:3px;font-size:22px;white-space:nowrap}
+  .score{color:#fff;background:#1b2945;border:1px solid #34496d;padding:8px 12px;border-radius:12px;white-space:nowrap}
+  .score b{color:#8eeaff}
+  .stage-line{display:flex;justify-content:space-between;gap:10px;color:#a9b9d6;font-size:13px;margin:0 4px 8px}
+  .track{height:6px;background:#202d49;border-radius:9px;overflow:hidden;margin:0 4px 12px}
+  .track-fill{height:100%;width:0;background:linear-gradient(90deg,#69dfff,#c18bff);transition:width .2s}
+  .arena{position:relative;overflow:hidden;border-radius:18px;border:1px solid #344363;background:#07142a}
+  canvas{display:block;width:100%;height:auto;aspect-ratio:3/4;max-height:620px;touch-action:none}
+  .overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:20px;background:#050a17b8;backdrop-filter:blur(5px);text-align:center}
+  .dialog{width:min(100%,360px);padding:24px 20px;background:#121d35;border:1px solid #405477;border-radius:22px;box-shadow:0 16px 50px #0008}
+  .dialog h2{margin:0 0 8px;font-size:28px}
+  .dialog p{color:#c0cce2;line-height:1.5;margin:8px 0 18px}
+  .pink-bubble{display:inline-block;background:#ff78bd;color:#301126;padding:10px 18px;border-radius:22px;font-weight:900;box-shadow:0 5px 0 #b84885;margin-bottom:10px}
+  button{border:0;border-radius:13px;padding:12px 24px;font:800 16px system-ui;cursor:pointer;transition:transform .12s,filter .12s}
+  button:hover{filter:brightness(1.08);transform:translateY(-1px)}
+  button:active{transform:translateY(1px)}
+  .primary{background:linear-gradient(135deg,#69e5ff,#8bafff);color:#071326;min-width:150px}
+  .retry{background:linear-gradient(135deg,#7df0a7,#40c982);color:#062514;min-width:150px}
+  .controls{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 4px 2px;color:#9eacc8;font-size:13px}
+  .arrows{display:flex;gap:9px}
+  .arrow{width:48px;height:40px;padding:0;background:#1b2945;color:#dceaff;border:1px solid #3b5074;font-size:20px}
+  .hidden{display:none!important}
+  @media(max-width:520px){.game-shell{padding:11px;border-radius:18px}.hud{gap:8px}.hearts{font-size:18px;letter-spacing:1px}.score{padding:7px 9px;font-size:13px}.controls{font-size:11px}}
+</style>
+</head>
+<body>
+<main class="game-shell">
+  <header>
+    <h1>BALLOON <span>BEYOND</span></h1>
+    <div class="hud">
+      <div class="hearts" id="hearts" aria-label="3 lives">♥ ♥ ♥</div>
+      <div class="score">SCORE <b id="score">0</b></div>
+    </div>
+  </header>
+  <div class="stage-line"><span id="stageName">Earth · Clear Sky</span><span id="progressText">Moon journey · 0%</span></div>
+  <div class="track"><div class="track-fill" id="progressFill"></div></div>
+  <section class="arena">
+    <canvas id="game" width="600" height="800" aria-label="Balloon obstacle game"></canvas>
+    <div class="overlay" id="overlay">
+      <div class="dialog" id="dialog">
+        <h2>Ready to rise?</h2>
+        <p>Guide your balloon through the atmosphere, dodge the obstacles and reach the Moon. Use ← → or A / D, or drag on the screen.</p>
+        <button class="primary" id="startBtn">START GAME</button>
+      </div>
+    </div>
+  </section>
+  <div class="controls">
+    <span>Move: ← → / A D · Touch: drag balloon</span>
+    <div class="arrows"><button class="arrow" id="leftBtn" aria-label="Move left">←</button><button class="arrow" id="rightBtn" aria-label="Move right">→</button></div>
+  </div>
+</main>
+<script>
+(() => {
+  const canvas = document.getElementById('game'), ctx = canvas.getContext('2d');
+  const $ = id => document.getElementById(id);
+  const W=600,H=800;
+  
+  const baseEarthStages=[
+    {name:'Earth · Clear Sky',from:0,to:12,hazards:['☁'],bg1:'#102c50',bg2:'#286a91'},
+    {name:'Earth · Troposphere',from:12,to:25,hazards:['🐦','✈'],bg1:'#163451',bg2:'#315b78'},
+    {name:'Earth · Stratosphere',from:25,to:39,hazards:['✈','🛰'],bg1:'#101f46',bg2:'#29446f'},
+    {name:'Earth · Mesosphere',from:39,to:53,hazards:['☄','🛰'],bg1:'#111735',bg2:'#252d59'},
+    {name:'Earth · Thermosphere',from:53,to:68,hazards:['🛰','☄'],bg1:'#11112f',bg2:'#302052'},
+    {name:'Earth · Exosphere',from:68,to:82,hazards:['🛰','☄'],bg1:'#0c1027',bg2:'#211c48'},
+    {name:'Moon · Lunar approach',from:82,to:100,hazards:['☄','🛰'],bg1:'#090d20',bg2:'#282b48',target:'Moon'}
+  ];
+
+  const planetaryJourneys = {
+    2: { name: 'Mars', color: '#c1440e', bg1: '#2b0f08', bg2: '#5c2214', hazards: ['☄', '🛸'] },
+    3: { name: 'Jupiter', color: '#c88b3a', bg1: '#311d0c', bg2: '#613b1a', hazards: ['☄', '⚡'] },
+    4: { name: 'Saturn', color: '#d4b873', bg1: '#1f1d12', bg2: '#4a4227', hazards: ['☄', '🪐'] },
+    5: { name: 'Uranus', color: '#4ab3de', bg1: '#0a1d26', bg2: '#163d52', hazards: ['☄', '❄'] },
+    6: { name: 'Neptune', color: '#2d4ac7', bg1: '#080d26', bg2: '#131e54', hazards: ['☄', '🌀'] },
+    7: { name: 'Mercury', color: '#8c8c8c', bg1: '#1c1c1c', bg2: '#3d3d3d', hazards: ['☄', '🔥'] },
+    8: { name: 'Venus', color: '#e3bb59', bg1: '#3d2b0c', bg2: '#755419', hazards: ['☄', '⚡'] },
+    9: { name: 'Sun', color: '#ffcc00', bg1: '#4a1500', bg2: '#b83b00', hazards: ['☄', '🔥', '⚡'] }
+  };
+
+  const balloonColors=['#ff6b9f','#ffd166','#7ce7ff','#b99aff','#8ff0b2','#ff9b69'];
+  let running=false,raf=0,last=0,elapsed=0,distance=0,score=0,lives=3,balloonColor=balloonColors[0];
+  let balloon={x:300,y:650,r:31},obstacles=[],particles=[],stars=[];
+  let invulnerable=0,spawnTimer=0,checkpoint=0,keys={},pointerDown=false,level=1;
+
+  for(let i=0;i<90;i++) stars.push({x:Math.random()*W,y:Math.random()*H,r:Math.random()*1.8+.3,a:Math.random()*.65+.2});
+
+  function getStages() {
+    if (level === 1) return baseEarthStages;
+    const p = planetaryJourneys[Math.min(level, 9)] || planetaryJourneys[9];
+    return [
+      { name: p.name + ' · Deep Space Approach', from: 0, to: 40, hazards: ['☄'], bg1: p.bg1, bg2: p.bg2 },
+      { name: p.name + ' · Atmosphere & Orbit', from: 40, to: 80, hazards: p.hazards, bg1: p.bg2, bg2: p.bg1 },
+      { name: p.name + ' · Surface Arrival', from: 80, to: 100, hazards: p.hazards, bg1: p.bg1, bg2: '#000', target: p.name }
+    ];
+  }
+
+  function stage(){
+    const currentStages = getStages();
+    return currentStages.find(s=>distance>=s.from&&distance<s.to)||currentStages[currentStages.length-1];
+  }
+
+  function updateHud(){
+    const currentStages = getStages();
+    const activeStage = stage();
+    $('hearts').textContent=Array.from({length:3},(_,i)=>i<lives?'♥':'♡').join(' ');
+    $('hearts').setAttribute('aria-label',lives+' lives');
+    $('score').textContent=score;
+    $('stageName').textContent=activeStage.name;
+    const destinationName = level === 1 ? 'Moon' : (planetaryJourneys[level] ? planetaryJourneys[level].name : 'Deep Cosmos');
+    $('progressText').textContent=destinationName+' journey · '+Math.floor(distance)+'%';
+    $('progressFill').style.width=distance+'%';
+  }
+
+  function reset(){
+    cancelAnimationFrame(raf);running=false;distance=0;score=0;lives=3;elapsed=0;spawnTimer=0;checkpoint=0;invulnerable=0;obstacles=[];particles=[];
+    balloon={x:300,y:650,r:31};balloonColor=balloonColors[(balloonColors.indexOf(balloonColor)+1)%balloonColors.length];
+    updateHud();draw();$('overlay').classList.remove('hidden');
+    const dest = level === 1 ? 'the Moon' : (planetaryJourneys[level] ? planetaryJourneys[level].name : 'the Universe');
+    $('dialog').innerHTML=`<h2>Ready to rise?</h2><p>Guide your balloon through space and reach ${dest}. Use ← → or A / D, or drag on the screen.</p><button class="primary" id="startBtn">START GAME</button>`;
+    $('startBtn').addEventListener('click',start);
+  }
+
+  function start(){if(running)return;$('overlay').classList.add('hidden');running=true;last=performance.now();raf=requestAnimationFrame(loop)}
+
+  function endGame(won){
+    running=false;cancelAnimationFrame(raf);$('overlay').classList.remove('hidden');
+    if(won){
+      score+=100;updateHud();
+      const currentDest = level === 1 ? 'Moon' : (planetaryJourneys[level] ? planetaryJourneys[level].name : 'Destination');
+      const nextDestKey = level + 1;
+      const nextDestName = planetaryJourneys[nextDestKey] ? planetaryJourneys[nextDestKey].name : 'Deep Space';
+      
+      if(level < 9) {
+        $('dialog').innerHTML=`<h2>🌙 ${currentDest} reached!</h2><p>Incredible flight! You completed level ${level} and earned <b>100 bonus points</b>.</p><button class="retry" id="nextBtn">TO ${nextDestName.toUpperCase()}</button>`;
+        $('nextBtn').addEventListener('click',()=>{level++;reset();});
+      } else {
+        $('dialog').innerHTML=`<h2>🏆 Ultimate Victory!</h2><p>You conquered all planets and reached the Sun! Final Score: <b>${score}</b></p><button class="retry" id="restartBtn">PLAY AGAIN</button>`;
+        $('restartBtn').addEventListener('click',()=>{level=1;reset();});
+      }
+    }else{
+      $('dialog').innerHTML='<div class="pink-bubble">WELL PLAYED!!</div><p>Your balloon used all 3 lives. Your score: <b>'+score+'</b></p><button class="retry" id="retryBtn">TRY AGAIN</button>';
+      $('retryBtn').addEventListener('click',reset);
+    }
+  }
+
+  function hit(){
+    if(invulnerable>0)return;
+    lives--;invulnerable=1.8;checkpoint=distance;balloon.x=300;balloon.y=650;obstacles=obstacles.filter(o=>o.y<balloon.y-90);
+    for(let i=0;i<18;i++)particles.push({x:balloon.x,y:balloon.y,vx:(Math.random()-.5)*150,vy:(Math.random()-.5)*150,t:.7});
+    updateHud();if(lives<=0)endGame(false);
+  }
+
+  function spawn(){
+    const s=stage(),type=s.hazards[Math.floor(Math.random()*s.hazards.length)];
+    const size=type==='✈'?35:type==='☁'?38:30;
+    obstacles.push({x:45+Math.random()*510,y:-55,size,type,speed:125+Math.random()*95+distance*.45,drift:(Math.random()-.5)*35,phase:Math.random()*6});
+  }
+
+  function update(dt){
+    elapsed+=dt;distance=Math.min(100,distance+dt*(level===1?3.0:2.5));
+    const move=(keys.ArrowLeft||keys.a?-1:0)+(keys.ArrowRight||keys.d?1:0);
+    balloon.x+=move*300*dt;balloon.x=Math.max(42,Math.min(W-42,balloon.x));
+    if(invulnerable>0)invulnerable-=dt;
+    spawnTimer-=dt;if(spawnTimer<=0){spawn();spawnTimer=Math.max(.42,1.05-distance*.004)+Math.random()*.35}
+    obstacles.forEach(o=>{o.y+=o.speed*dt;o.x+=Math.sin(elapsed*1.5+o.phase)*o.drift*dt;o.x=Math.max(30,Math.min(W-30,o.x));});
+    obstacles=obstacles.filter(o=>o.y<H+60);
+    for(const o of obstacles){
+      const dx=o.x-balloon.x,dy=o.y-balloon.y;
+      if(Math.hypot(dx,dy)<o.size+balloon.r*.65){o.y=H+100;hit();break}
+    }
+    particles.forEach(p=>{p.x+=p.vx*dt;p.y+=p.vy*dt;p.t-=dt});particles=particles.filter(p=>p.t>0);
+    updateHud();if(distance>=100)endGame(true);
+  }
+
+  function drawBalloon(){
+    if(invulnerable>0&&Math.floor(elapsed*12)%2===0)return;
+    ctx.save();ctx.translate(balloon.x,balloon.y);
+    ctx.strokeStyle='#f7d7bd';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-8,25);ctx.lineTo(-4,47);ctx.lineTo(5,47);ctx.lineTo(9,25);ctx.stroke();
+    ctx.fillStyle='#d8a56c';ctx.fillRect(-7,45,14,13);
+    const g=ctx.createRadialGradient(-12,-15,3,0,0,36);g.addColorStop(0,'#fff');g.addColorStop(.18,balloonColor);g.addColorStop(1,shade(balloonColor));
+    ctx.fillStyle=g;ctx.beginPath();ctx.ellipse(0,0,29,36,0,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#ffffff55';ctx.beginPath();ctx.ellipse(-11,-12,6,13,-.4,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+
+  function shade(hex){let n=parseInt(hex.slice(1),16);return '#'+[16,8,0].map(s=>Math.max(0,((n>>s)&255)*.62|0).toString(16).padStart(2,'0')).join('')}
+
+  function draw(){
+    const s=stage(),g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,s.bg1);g.addColorStop(1,s.bg2);ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+    stars.forEach(st=>{ctx.globalAlpha=st.a*(.65+.35*Math.sin(elapsed*1.5+st.x));ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(st.x,(st.y+elapsed*18)%H,st.r,0,Math.PI*2);ctx.fill()});ctx.globalAlpha=1;
+    
+    if(level===1 && distance<25){
+      ctx.fillStyle='#ffffff12';
+      for(let i=0;i<5;i++){let x=(i*147+elapsed*9)%700-50;ctx.beginPath();ctx.ellipse(x,150+i*125,48,15,0,0,Math.PI*2);ctx.fill()}
+    }
+
+    if(distance>=82 && s.target){
+      ctx.fillStyle = planetaryJourneys[level] ? planetaryJourneys[level].color : '#b9beca';
+      ctx.beginPath();ctx.arc(495,145,65,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#00000033';[[470,125,12],[520,165,17],[485,180,8]].forEach(([x,y,r])=>{ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.fill()});
+    }
+
+    obstacles.forEach(o=>{ctx.font=o.size*1.65+'px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.shadowColor='#0009';ctx.shadowBlur=12;ctx.fillText(o.type,o.x,o.y);ctx.shadowBlur=0});
+    particles.forEach(p=>{ctx.globalAlpha=Math.max(0,p.t);ctx.fillStyle='#ffd2e5';ctx.beginPath();ctx.arc(p.x,p.y,3,0,7);ctx.fill()});ctx.globalAlpha=1;
+    drawBalloon();
+    ctx.fillStyle='#ffffff9a';ctx.font='14px system-ui';ctx.textAlign='left';ctx.fillText('ALTITUDE  '+Math.floor(distance*100)+' km',18,28);
+    ctx.textAlign='right';ctx.fillText('LEVEL '+level,582,28);
+  }
+
+  function loop(now){if(!running)return;const dt=Math.min(.035,(now-last)/1000);last=now;update(dt);draw();if(running)raf=requestAnimationFrame(loop)}
+  window.addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();keys[e.key]=true});
+  window.addEventListener('keyup',e=>keys[e.key]=false);
+  function holdButton(id,key){const el=$(id);el.addEventListener('pointerdown',e=>{e.preventDefault();keys[key]=true});['pointerup','pointerleave','pointercancel'].forEach(ev=>el.addEventListener(ev,()=>keys[key]=false))}
+  holdButton('leftBtn','ArrowLeft');holdButton('rightBtn','ArrowRight');
+  canvas.addEventListener('pointerdown',e=>{pointerDown=true;canvas.setPointerCapture(e.pointerId);movePointer(e)});
+  canvas.addEventListener('pointermove',e=>{if(pointerDown)movePointer(e)});
+  canvas.addEventListener('pointerup',()=>pointerDown=false);canvas.addEventListener('pointercancel',()=>pointerDown=false);
+  function movePointer(e){const r=canvas.getBoundingClientRect();balloon.x=Math.max(42,Math.min(W-42,(e.clientX-r.left)/r.width*W))}
+  $('startBtn').addEventListener('click',start);updateHud();draw();
+})();
+</script>
+</body>
+</html>
